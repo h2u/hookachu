@@ -1,0 +1,114 @@
+name: Container image
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: container-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build test stage
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          target: build
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: hookachu-tests:local
+      - name: Test application
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          docker run --rm --platform "$PLATFORM" --entrypoint npm hookachu-tests:local run format:check
+          docker run --rm --platform "$PLATFORM" --entrypoint npm hookachu-tests:local test
+      - name: Build runtime image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: hookachu:local
+      - name: Check capture and persistence in runtime image
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          docker run -d --platform "$PLATFORM" --name hookachu --mount type=volume,source=hookachu-smoke,target=/data hookachu:local
+          wait_for_health() {
+            for attempt in $(seq 1 60); do
+              if [ "$(docker inspect --format '{{.State.Health.Status}}' hookachu)" = healthy ]; then return 0; fi
+              echo "Waiting for container ($attempt/60)"
+              sleep 2
+            done
+            docker logs hookachu
+            return 1
+          }
+          wait_for_health
+          docker exec -i hookachu node --input-type=module < test/container-smoke.mjs
+          docker restart hookachu
+          wait_for_health
+          docker exec -i -e SMOKE_RESTORE=1 hookachu node --input-type=module < test/container-smoke.mjs
+      - name: Container logs
+        if: failure()
+        run: docker logs hookachu || true
+
+  publish:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Image name
+        id: image
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "name=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        id: meta
+        with:
+          images: ${{ steps.image.outputs.name }}
+          labels:
+            org.opencontainers.image.licenses=MIT
+          flavor: latest=false
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
+            type=sha
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

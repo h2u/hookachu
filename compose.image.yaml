@@ -1,0 +1,25 @@
+name: hookachu
+
+services:
+  hookachu:
+    image: ghcr.io/h2u/hookachu:latest
+    ports:
+      - "8787:8787"
+    volumes:
+      - hookachu-data:/data
+    restart: unless-stopped
+    init: true
+
+volumes:
+  hookachu-data:
+
+x-casaos:
+  title:
+    en_us: Hookachu
+  tagline:
+    en_us: Temporary webhook inbox with live request inspection
+  category: Developer
+  port_map: "8787"
+  scheme: http
+  index: /
+  main: hookachu
