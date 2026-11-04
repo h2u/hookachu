@@ -332,7 +332,7 @@ function time(n) {
         </div>
       </section>
     </main>
-    <main v-else-if="!inbox.secret" class="landing">
+    <main v-else-if="!inbox.secret" class="landing unavailable">
       <div class="eyebrow">TEMPORARY BY DESIGN</div>
       <h1>Inbox unavailable<span class="brand-dot">.</span></h1>
       <p class="intro">
@@ -341,25 +341,33 @@ function time(n) {
           "This inbox has expired, or its viewing key is missing."
         }}
       </p>
-      <p>
-        Expired inboxes cannot be restored. Create a new inbox to get a fresh
-        URL.
-      </p>
-      <button
-        class="primary large"
-        :disabled="inbox.busy"
-        @click="
-          inbox.reset();
-          inbox.create();
-        "
-      >
-        Create a new inbox <PhArrowRight :size="20" aria-hidden="true" />
-      </button>
-      <p>
-        <a href="/" class="text-button" @click.prevent="inbox.goHome()"
-          >Back to homepage</a
-        >
-      </p>
+      <section class="unavailable-card" aria-label="Create a fresh inbox">
+        <div class="unavailable-icon">
+          <PhClock :size="26" aria-hidden="true" />
+        </div>
+        <div class="unavailable-content">
+          <h2>A fresh start for your next request</h2>
+          <p>
+            Expired inboxes cannot be restored. Create a new inbox to get a
+            fresh URL.
+          </p>
+          <div class="unavailable-actions">
+            <button
+              class="primary large"
+              :disabled="inbox.busy"
+              @click="
+                inbox.reset();
+                inbox.create();
+              "
+            >
+              Create a new inbox <PhArrowRight :size="20" aria-hidden="true" />
+            </button>
+            <a href="/" class="text-button" @click.prevent="inbox.goHome()"
+              >Back to homepage</a
+            >
+          </div>
+        </div>
+      </section>
     </main>
     <main v-else class="workspace">
       <div class="workspace-heading">
